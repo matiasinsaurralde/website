@@ -1,7 +1,35 @@
 import { notFound } from 'next/navigation'
-import { CustomMDX } from 'app/components/mdx'
 import { formatDate, getBlogPosts } from 'app/blog/utils'
 import { baseUrl } from 'app/sitemap'
+import { highlight } from 'sugar-high'
+import { marked } from 'marked'
+
+async function processMDXContent(content: string) {
+  // First, extract and preserve code blocks
+  const codeBlocks: Array<{ id: string; language: string; code: string }> = []
+  let blockId = 0
+  
+  // Extract code blocks and replace with placeholders
+  let processedContent = content.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, language, code) => {
+    const lang = language || 'text'
+    const id = `CODE_BLOCK_${blockId++}`
+    codeBlocks.push({ id, language: lang, code: code.trim() })
+    return `\n\n${id}\n\n`
+  })
+  
+  // Process the remaining content as Markdown
+  const markdownHtml = await marked(processedContent)
+  
+  // Replace code block placeholders with highlighted HTML
+  let finalHtml = markdownHtml
+  codeBlocks.forEach(({ id, language, code }) => {
+    const highlightedCode = highlight(code)
+    const codeHtml = `<pre><code class="language-${language}">${highlightedCode}</code></pre>`
+    finalHtml = finalHtml.replace(id, codeHtml)
+  })
+  
+  return finalHtml
+}
 
 export async function generateStaticParams() {
   let posts = getBlogPosts()
@@ -11,8 +39,9 @@ export async function generateStaticParams() {
   }))
 }
 
-export function generateMetadata({ params }) {
-  let post = getBlogPosts().find((post) => post.slug === params.slug)
+export async function generateMetadata({ params }) {
+  const { slug } = await params
+  let post = getBlogPosts().find((post) => post.slug === slug)
   if (!post) {
     return
   }
@@ -51,8 +80,9 @@ export function generateMetadata({ params }) {
   }
 }
 
-export default function Blog({ params }) {
-  let post = getBlogPosts().find((post) => post.slug === params.slug)
+export default async function Blog({ params }) {
+  const { slug } = await params
+  let post = getBlogPosts().find((post) => post.slug === slug)
 
   if (!post) {
     notFound()
@@ -90,9 +120,7 @@ export default function Blog({ params }) {
           {formatDate(post.metadata.publishedAt)}
         </p>
       </div>
-      <article className="prose">
-        <CustomMDX source={post.content} />
-      </article>
+      <article className="prose" dangerouslySetInnerHTML={{ __html: await processMDXContent(post.content) }} />
     </section>
   )
 }
