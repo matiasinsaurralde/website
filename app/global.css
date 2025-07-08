@@ -107,6 +107,22 @@ html {
   @apply font-medium;
 }
 
+.prose blockquote {
+  @apply border-l-4 border-neutral-300 dark:border-neutral-600 pl-6 py-2 my-6 bg-neutral-50 dark:bg-neutral-900/50 italic text-neutral-700 dark:text-neutral-300;
+}
+
+.prose blockquote p {
+  @apply my-2;
+}
+
+.prose blockquote p:first-child {
+  @apply mt-0;
+}
+
+.prose blockquote p:last-child {
+  @apply mb-0;
+}
+
 .prose ul {
   @apply list-disc pl-6;
 }
