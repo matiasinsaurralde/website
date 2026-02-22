@@ -3,8 +3,21 @@ version: '3.8'
 services:
   website:
     image: ghcr.io/matiasinsaurralde/website:latest
+    # Consider pinning to a digest (image@sha256:...) for supply-chain safety.
     container_name: website
     restart: always
+    user: "1001:1001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/.next/cache:rw,nosuid,size=128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 200
+    labels:
+      - diun.enable=true
     networks:
       - internal
     # Remove port exposure since Nginx will proxy to internal network
@@ -13,6 +26,17 @@ services:
     image: nginx:alpine
     container_name: nginx
     restart: always
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m
+      - /var/run:rw,noexec,nosuid,size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 200
     ports:
       - "80:80"
       - "443:443"
@@ -26,14 +50,36 @@ services:
     networks:
       - internal
 
-  watchtower:
-    image: containrrr/watchtower
-    container_name: watchtower
+  diun:
+    image: ghcr.io/crazy-max/diun:latest
+    container_name: diun
+    command: serve
     restart: always
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 100
+    environment:
+      - TZ=UTC
+      - DIUN_WATCH_SCHEDULE=0 */6 * * *
+      - DIUN_WATCH_JITTER=30s
+      - DIUN_PROVIDERS_DOCKER=true
+      - DIUN_PROVIDERS_DOCKER_WATCHBYDEFAULT=false
+      - DIUN_NOTIF_SCRIPT_CMD=/bin/sh
+      - DIUN_NOTIF_SCRIPT_ARGS=/diun/restart.sh
+      - DIUN_NOTIF_SCRIPT_DIR=/workspace
     volumes:
+      - ./data/diun:/data
+      - ./diun:/diun:ro
+      - ./:/workspace:ro
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 60 website nginx
+    labels:
+      - diun.enable=true
 
 networks:
   internal:
-    driver: bridge 
+    driver: bridge
