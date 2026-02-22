@@ -5,7 +5,7 @@ server {
 
     # Origin lock: configure Bunny to send this header/value on origin pulls.
     # Requests that do not include this secret are blocked.
-    if ($http_x_origin_verify != "replace-with-long-random-secret") {
+    if ($http_x_origin_verify != "${X_ORIGIN_VERIFY}") {
         return 403;
     }
 
@@ -15,7 +15,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
     add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-    
+
     # Proxy to website container
     location / {
         proxy_pass http://website:3000;
@@ -29,4 +29,4 @@ server {
         proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 86400;
     }
-} 
+}
