@@ -34,6 +34,7 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE
+      - CHOWN
     pids_limit: 200
     ports:
       - "0.0.0.0:80:80"
