@@ -37,16 +37,16 @@ function readMDXFile(filePath) {
 
 function getMDXData(dir) {
   let mdxFiles = getMDXFiles(dir)
-  return mdxFiles.map((file) => {
-    let { metadata, content } = readMDXFile(path.join(dir, file))
+  const seen = new Set<string>()
+  const posts: Array<{ metadata: Metadata; slug: string; content: string }> = []
+  for (const file of mdxFiles) {
     let slug = path.basename(file, path.extname(file))
-
-    return {
-      metadata,
-      slug,
-      content,
-    }
-  })
+    if (seen.has(slug)) continue
+    seen.add(slug)
+    let { metadata, content } = readMDXFile(path.join(dir, file))
+    posts.push({ metadata, slug, content })
+  }
+  return posts
 }
 
 export function getBlogPosts() {

@@ -45,6 +45,9 @@ RUN chown nextjs:nodejs .next
 # https://nextjs.org/docs/advanced-features/output-file-tracing
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Blog and bio content are read at runtime by server components; include them so pages render reliably
+COPY --from=builder --chown=nextjs:nodejs /app/app/blog/posts ./app/blog/posts
+COPY --from=builder --chown=nextjs:nodejs /app/content ./content
 
 USER nextjs
 

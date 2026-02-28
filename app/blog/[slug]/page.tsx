@@ -31,6 +31,8 @@ async function processMDXContent(content: string) {
   return finalHtml
 }
 
+export const dynamicParams = false
+
 export async function generateStaticParams() {
   let posts = getBlogPosts()
 

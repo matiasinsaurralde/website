@@ -6,14 +6,12 @@ export function BlogPosts() {
 
   return (
     <div>
-      {allBlogs
+      {[...allBlogs]
         .sort((a, b) => {
-          if (
-            new Date(a.metadata.publishedAt) > new Date(b.metadata.publishedAt)
-          ) {
-            return -1
-          }
-          return 1
+          const dateA = new Date(a.metadata.publishedAt).getTime()
+          const dateB = new Date(b.metadata.publishedAt).getTime()
+          if (dateA !== dateB) return dateB - dateA
+          return a.slug.localeCompare(b.slug)
         })
         .map((post) => (
           <Link
