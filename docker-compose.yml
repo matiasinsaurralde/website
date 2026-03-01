@@ -1,6 +1,9 @@
 services:
   website:
-    image: ghcr.io/matiasinsaurralde/website:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/matiasinsaurralde/website:static
     # Consider pinning to a digest (image@sha256:...) for supply-chain safety.
     container_name: website
     restart: always
@@ -8,7 +11,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
-      - /app/.next/cache:rw,nosuid,size=128m
     security_opt:
       - no-new-privileges:true
     cap_drop:
