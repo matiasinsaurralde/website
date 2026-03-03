@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/matiasinsaurralde/website:static
+    image: ghcr.io/matiasinsaurralde/website:latest
     # Consider pinning to a digest (image@sha256:...) for supply-chain safety.
     container_name: website
     restart: always
@@ -43,6 +43,8 @@ services:
     pids_limit: 200
     ports:
       - "0.0.0.0:80:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - X_ORIGIN_VERIFY=${X_ORIGIN_VERIFY:?set X_ORIGIN_VERIFY in .env}
     volumes:
