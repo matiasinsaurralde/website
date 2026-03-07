@@ -1,0 +1,223 @@
+---
+title: 'Setting Up Tangled on Alpine Linux'
+publishedAt: '2026-03-07'
+summary: 'A practical guide to install and run a Tangled knot server on Alpine with OpenRC and Nginx.'
+---
+
+This guide walks through a clean Tangled `knot` setup on Alpine Linux (tested on Alpine `3.22`). The final architecture is:
+
+- `knot` running as a dedicated `git` user
+- OpenRC managing the service lifecycle
+- Nginx reverse proxying HTTP and websocket traffic
+
+Most commands below should be run as `root` unless a step explicitly says otherwise.
+
+## 1) Update Alpine package indexes
+
+Start by refreshing `apk` indexes so you install the latest package metadata available in your configured mirrors.
+
+```bash
+apk update
+```
+
+## 2) Install Go
+
+Download and extract Go, then expose it through `/etc/profile.d` so all users can access the toolchain.
+
+```bash
+wget https://go.dev/dl/go1.26.1.linux-amd64.tar.gz
+tar -C /usr/local -xzf go1.26.1.linux-amd64.tar.gz
+echo 'export GOROOT=/usr/local/go' >> /etc/profile.d/go.sh
+echo 'export GOPATH=$HOME/go' >> /etc/profile.d/go.sh
+echo 'export PATH=$GOROOT/bin:$GOPATH/bin:$PATH' >> /etc/profile.d/go.sh
+. /etc/profile
+```
+
+Optional sanity check:
+
+```bash
+go version
+```
+
+## 3) Build the Knot binary
+
+`knot` currently needs CGO, so we install the compiler toolchain (`build-base`) and enable `CGO_ENABLED=1` before building.
+
+```bash
+apk add git build-base
+git clone https://tangled.org/@tangled.org/core
+cd core
+export CGO_ENABLED=1
+go build -o knot ./cmd/knot
+mv knot /usr/local/bin/knot
+chown root:root /usr/local/bin/knot
+```
+
+Optional sanity check:
+
+```bash
+/usr/local/bin/knot --help
+```
+
+## 4) Create and configure the `git` service user
+
+Use a dedicated unprivileged user to run the service and own repositories.
+
+```bash
+adduser -D git
+```
+
+Switch to that user and define environment variables in `/home/git/.knot.env`:
+
+```bash
+su git
+cat > /home/git/.knot.env <<'EOF'
+KNOT_REPO_SCAN_PATH=/home/git
+KNOT_SERVER_HOSTNAME=knot.example.com
+APPVIEW_ENDPOINT=https://tangled.org
+KNOT_SERVER_OWNER=did:plc:foobar
+KNOT_SERVER_INTERNAL_LISTEN_ADDR=127.0.0.1:5444
+KNOT_SERVER_LISTEN_ADDR=127.0.0.1:5555
+EOF
+exit
+```
+
+Notes on key values:
+
+- `KNOT_SERVER_HOSTNAME`: public DNS name users will connect to.
+- `KNOT_SERVER_OWNER`: your DID from the [Tangled settings page](https://tangled.org/settings).
+- `KNOT_SERVER_LISTEN_ADDR`: public-facing local listener (proxied by Nginx in this guide).
+- `KNOT_SERVER_INTERNAL_LISTEN_ADDR`: secondary local bind used by internal operations.
+
+## 5) Configure SSH for key lookup
+
+Knot can provide authorized SSH keys dynamically. Add this block to `/etc/ssh/sshd_config`:
+
+```bash
+cat >> /etc/ssh/sshd_config <<'EOF'
+Match User git
+    AuthorizedKeysCommand /usr/local/bin/knot keys -o authorized-keys
+    AuthorizedKeysCommandUser nobody
+EOF
+```
+
+Validate config before restart to avoid locking yourself out:
+
+```bash
+sshd -t
+rc-service sshd restart
+```
+
+## 6) Create an OpenRC service for Knot
+
+Create `/etc/init.d/knotserver`:
+
+```sh
+#!/sbin/openrc-run
+
+name="knotserver"
+description="Knot server"
+
+command="/usr/local/bin/knot"
+command_args="server"
+command_user="git:git"
+
+command_background="no"
+pidfile="/run/${RC_SVCNAME}.pid"
+
+start_pre() {
+    [ -f /home/git/.knot.env ] && . /home/git/.knot.env
+}
+
+start() {
+    ebegin "Starting ${name}"
+    [ -f /home/git/.knot.env ] && . /home/git/.knot.env
+
+    supervise-daemon "${RC_SVCNAME}" \
+        --start \
+        --pidfile "${pidfile}" \
+        --user "${command_user}" \
+        --chdir /home/git \
+        -- "${command}" ${command_args}
+
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping ${name}"
+    supervise-daemon "${RC_SVCNAME}" --stop --pidfile "${pidfile}"
+    eend $?
+}
+
+depend() {
+    need net
+    use logger
+}
+```
+
+Make it executable, register for boot, and start it:
+
+```bash
+chmod +x /etc/init.d/knotserver
+rc-update add knotserver default
+rc-service knotserver start
+```
+
+Optional sanity checks:
+
+```bash
+rc-service knotserver status
+ss -lntp | rg 5555
+```
+
+## 7) Configure Nginx as reverse proxy
+
+Install Nginx and enable it at boot:
+
+```bash
+apk add nginx
+rc-update add nginx default
+```
+
+Edit `/etc/nginx/http.d/default.conf`:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name knot.example.com;
+
+    location / {
+        proxy_pass http://localhost:5555;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /events {
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Host $http_host;
+        proxy_set_header Upgrade websocket;
+        proxy_set_header Connection Upgrade;
+        proxy_pass http://localhost:5555;
+    }
+
+    # Add SSL/TLS settings here for production.
+}
+```
+
+Validate Nginx config and restart:
+
+```bash
+nginx -t
+rc-service nginx restart
+```
+
+## 8) Final checks
+
+At this point, your Knot server should be available at `knot.example.com` (or your chosen hostname) via Nginx.
+
+You can then register the node from the [Tangled knots settings page](https://tangled.org/settings/knots).
+
+In my setup, TLS is terminated at the CDN; if you are not using one, configure TLS directly in Nginx before exposing the service.
