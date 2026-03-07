@@ -4,6 +4,8 @@ publishedAt: '2026-03-07'
 summary: 'A practical guide to install and run a Tangled knot server on Alpine with OpenRC and Nginx.'
 ---
 
+I've been exploring [Tangled](https://tangled.org) lately. Tangled is a decentralized, Git-based collaboration layer built on the AT Protocol: you host your own repos (knots), and the ecosystem treats them as first-class, verifiable data stores. If that sounds interesting, the [Tangled site](https://tangled.org) has the overview, docs, and source.
+
 This guide walks through a clean Tangled `knot` setup on Alpine Linux (tested on Alpine `3.22`). The final architecture is:
 
 - `knot` running as a dedicated `git` user
@@ -122,10 +124,16 @@ command="/usr/local/bin/knot"
 command_args="server"
 command_user="git:git"
 
-command_background="no"
 pidfile="/run/${RC_SVCNAME}.pid"
 
+# log files
+output_log="/var/log/${RC_SVCNAME}.log"
+error_log="/var/log/${RC_SVCNAME}.err"
+
 start_pre() {
+    checkpath --directory --owner git:git --mode 0755 /var/log
+    checkpath --file --owner git:git --mode 0644 "$output_log"
+    checkpath --file --owner git:git --mode 0644 "$error_log"
     [ -f /home/git/.knot.env ] && . /home/git/.knot.env
 }
 
@@ -133,25 +141,20 @@ start() {
     ebegin "Starting ${name}"
     [ -f /home/git/.knot.env ] && . /home/git/.knot.env
 
+    set -a 
+    . /home/git/.knot.env
+    set +a
+
     supervise-daemon "${RC_SVCNAME}" \
         --start \
         --pidfile "${pidfile}" \
         --user "${command_user}" \
         --chdir /home/git \
+        --stdout "${output_log}" \
+        --stderr "${error_log}" \
         -- "${command}" ${command_args}
 
     eend $?
-}
-
-stop() {
-    ebegin "Stopping ${name}"
-    supervise-daemon "${RC_SVCNAME}" --stop --pidfile "${pidfile}"
-    eend $?
-}
-
-depend() {
-    need net
-    use logger
 }
 ```
 
@@ -214,10 +217,31 @@ nginx -t
 rc-service nginx restart
 ```
 
-## 8) Final checks
+## 8) Final checks and common issues
 
-At this point, your Knot server should be available at `knot.example.com` (or your chosen hostname) via Nginx.
+At this point the knot server should be reachable at `knot.example.com` (or your chosen hostname) via Nginx.
 
-You can then register the node from the [Tangled knots settings page](https://tangled.org/settings/knots).
+Register your knot from the [Tangled knots settings page](https://tangled.org/settings/knots).
 
-In my setup, TLS is terminated at the CDN; if you are not using one, configure TLS directly in Nginx before exposing the service.
+If you use a CDN in front (as I do), TLS is terminated there. Otherwise, configure TLS in Nginx before exposing the service.
+
+If SSH logins as the `git` user fail, ensure the account is unlocked:
+
+```bash
+usermod -U git
+```
+
+Some setups treat “no password” as locked; if unlock alone isn’t enough, set a random password so the account is considered active:
+
+```bash
+usermod -p "$(openssl rand -base64 32 | openssl passwd -6 -stdin)" git
+```
+
+In `/etc/ssh/sshd_config`, add or confirm:
+
+```
+PasswordAuthentication no
+PubkeyAuthentication yes
+```
+
+To troubleshoot errors, check the knot logs at `/var/log/knotserver.log` and `/var/log/knotserver.err`.
