@@ -22,26 +22,6 @@ services:
       - internal
     # Remove port exposure since Nginx will proxy to internal network
 
-  knot:
-    image: tngl/knot:v1.10.0-alpha
-    container_name: knot
-    restart: always
-    environment:
-      - KNOT_SERVER_HOSTNAME=${KNOT_SERVER_HOSTNAME}
-      - KNOT_SERVER_OWNER=${KNOT_SERVER_OWNER}
-      - KNOT_SERVER_DB_PATH=/app/knotserver.db
-      - KNOT_REPO_SCAN_PATH=/home/git/repositories
-      - KNOT_SERVER_INTERNAL_LISTEN_ADDR=localhost:5444
-    volumes:
-      - ./keys:/etc/ssh/keys
-      - ./repositories:/home/git/repositories
-      - ./server:/app
-    ports:
-      - "5555:5555"
-      - "2222:22"
-    networks:
-      - internal
-
   nginx:
     image: nginx:alpine
     container_name: nginx
@@ -73,7 +53,6 @@ services:
       - ./logs:/var/log/nginx
     depends_on:
       - website
-      - knot
     networks:
       - internal
 
