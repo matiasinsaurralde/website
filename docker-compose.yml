@@ -57,7 +57,10 @@ services:
       - internal
 
   diun:
-    image: ghcr.io/crazy-max/diun:latest
+    build:
+      context: ./diun
+      dockerfile: Dockerfile
+    image: ghcr.io/matiasinsaurralde/diun-with-docker-cli:local
     container_name: diun
     command: serve
     restart: always
