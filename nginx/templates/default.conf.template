@@ -30,3 +30,40 @@ server {
         proxy_read_timeout 86400;
     }
 }
+
+# HTTP origin server for Knot (TLS is terminated at Bunny edge)
+server {
+    listen 80;
+    server_name knot.insaurral.de;
+
+    # Origin lock: configure Bunny to send this header/value on origin pulls.
+    # Requests that do not include this secret are blocked.
+    if ($http_x_origin_verify != "${X_ORIGIN_VERIFY}") {
+        return 403;
+    }
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+    # Proxy to host service on port 5555
+    location / {
+        proxy_pass http://host.docker.internal:5555;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Websocket endpoint for knot events
+    location /events {
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header Host $http_host;
+        proxy_set_header Upgrade websocket;
+        proxy_set_header Connection Upgrade;
+        proxy_pass http://host.docker.internal:5555;
+    }
+}
